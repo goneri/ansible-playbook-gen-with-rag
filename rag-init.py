@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
-__import__('pysqlite3')
+__import__("pysqlite3")
 import sys
-sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+
+sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
 
 import httpx
 import httpcore
@@ -17,14 +18,14 @@ from pydantic import AfterValidator, BaseModel
 
 from utils import read_role
 
-#model = "qwen2.5:14b"
-#ollama run hf.co/unsloth/Qwen2.5-Coder-14B-Instruct-128K-GGUF:Q4_K_M
-#model = "hf.co/unsloth/Qwen2.5-Coder-14B-Instruct-128K-GGUF:Q4_K_M"
+# model = "qwen2.5:14b"
+# ollama run hf.co/unsloth/Qwen2.5-Coder-14B-Instruct-128K-GGUF:Q4_K_M
+# model = "hf.co/unsloth/Qwen2.5-Coder-14B-Instruct-128K-GGUF:Q4_K_M"
 model = "gemma3:12b"
 num_ctx = 131072
 
-#model = "granite3.3:8b"
-#num_ctx = 131072
+# model = "granite3.3:8b"
+# num_ctx = 131072
 
 dbClient = chromadb.PersistentClient(path=f"chromadb-{model.replace('/', '_')}")
 collection = dbClient.get_or_create_collection(name="roles")
@@ -47,8 +48,9 @@ def add_to_db(dbClient, role_name, summary: str, quality: int):
         ids=[role_name],
         embeddings=embeddings,
         metadatas=[{"quality": quality}],
-        documents=[summary]
+        documents=[summary],
     )
+
 
 dbClient = chromadb.PersistentClient(path="chromadb")
 client = Client(
@@ -57,24 +59,31 @@ client = Client(
 )
 
 
-def get_quality(role_content) -> int|None:
+def get_quality(role_content) -> int | None:
     def isBetween0And100(value: int):
         if value <= 100:
             return value
         raise ValueError("Unexpected rating")
 
     class QualityAnswer(BaseModel):
-        rating: Annotated[int,AfterValidator(isBetween0And100)]
+        rating: Annotated[int, AfterValidator(isBetween0And100)]
         reason: str
 
     for _ in range(3):
         try:
-            response = client.generate(model=model, system=
-                                   "User will share the content of an Ansible role, file by file. "
-                                   "Read the whole content first. "
-                                   "Return a number between 0 and 100 based on the quality of the role. "
-                                   "0 for a poor quality Ansible role, and 100, for a great role that can "
-                                   "be reused in various context and resolve problems.", prompt=role_content, stream=False, options={"num_ctx": num_ctx}, format=QualityAnswer.model_json_schema(),)
+            response = client.generate(
+                model=model,
+                system="User will share the content of an Ansible role, file by file. "
+                "Read the whole content first. "
+                "Return a number between 0 and 100 based on the quality of the role. "
+                "0 for a poor quality Ansible role, and 100, for a great role that can "
+                "be reused in various context and resolve problems. "
+                "Ignore missing tests, it's fine.",
+                prompt=role_content,
+                stream=False,
+                options={"num_ctx": num_ctx},
+                format=QualityAnswer.model_json_schema(),
+            )
         except (httpx.ReadTimeout, httpcore.ReadTimeout):
             print("timeout")
             return
@@ -116,17 +125,22 @@ def prepare_example(role_name, role_content) -> str:
     Do NOT write a full playbook. Just Ansible tasks.
     """
 
-
     for _ in range(15):
-        response = client.generate(model=model, system=
-                               f"User will share the content of an Ansible role called `{role_name}`, "
-                               f"file by file. {dedent(base_prompt_example)}"
-, prompt=role_content, stream=False, options={"num_ctx": num_ctx, "temperature": 1})
+        response = client.generate(
+            model=model,
+            system=f"User will share the content of an Ansible role called `{role_name}`, "
+            f"file by file. {dedent(base_prompt_example)}",
+            prompt=role_content,
+            stream=False,
+            options={"num_ctx": num_ctx, "temperature": 1},
+        )
 
         print(response.response)
-        #if "tasks_from" in response.response:
+        # if "tasks_from" in response.response:
         #    continue
-        matches = re.findall(r".*?```(yaml|yml|)\n+(.+)```", response.response, re.MULTILINE | re.DOTALL)
+        matches = re.findall(
+            r".*?```(yaml|yml|)\n+(.+)```", response.response, re.MULTILINE | re.DOTALL
+        )
         yaml_candidates = [response.response] + [m[1] for m in matches]
         for c in yaml_candidates:
             try:
@@ -143,19 +157,29 @@ def prepare_example(role_name, role_content) -> str:
     print(f"Cannot generate example for {role_name}")
 
 
-
 def is_good_summary(summary: str):
-    response = client.generate(model='granite3.3:8b', system="User will share a text and you we decide if it's a good summary of a function that can be shared with a person. You MUST ONLY answer with YES or NO. If the answer is NO, add an extra line to explain why.", prompt=summary, stream=False)
+    response = client.generate(
+        model=model,
+        system="User will share a text and you we decide if it's a good summary of a "
+        "function that can be shared with a person. You MUST ONLY answer with YES "
+        "or NO. If the answer is NO, add an extra line to explain why.",
+        prompt=summary,
+        stream=False,
+        options={"num_ctx": num_ctx},
+    )
     return response.response.startswith("YES")
 
 
 if __name__ == "__main__":
     for role_path in Path("roles").iterdir():
+        if role_path.name != "nginxinc.nginx":
+            continue
         print(f"\n# {role_path}\n")
         if found := collection.get(ids=[role_path.name]):
             if found["ids"]:
-                print("Skip, already indexed")
-                continue
+                pass
+                # print("Skip, already indexed")
+                # continue
 
         role_content = read_role(role_path)
 
@@ -165,22 +189,31 @@ if __name__ == "__main__":
             continue
         quality = get_quality(role_content=role_content)
         print(f"quality={quality}")
-        if not quality or quality < 60:
+        if not quality or quality < 50:
             print("Skip, quality too low")
             continue
         example_path = Path("examples") / role_path.name
         if not example_path.exists():
-            if example_content := prepare_example(role_path.name, role_content=role_content):
+            if example_content := prepare_example(
+                role_path.name, role_content=role_content
+            ):
                 example_path.write_text(example_content)
         for _ in range(5):
-            response = client.generate(model=model, system=
-                                       "User will share the content of an Ansible role, file by file. Read "
-                                       "the whole content first. Give a 3 lines long summary that focus on "
-                                       "the features. The summary should NOT give the role name. The summary "
-                                       "should NOT cover each file. The SUMMARY MUST explain the most "
-                                       "important parameters.", prompt=role_content, stream=False, options={"num_ctx": num_ctx})
+            response = client.generate(
+                model=model,
+                system="User will share the content of an Ansible role, file by file. Read "
+                "the whole content first. Give a 3 lines long summary that focus on "
+                "the features. The summary should NOT give the role name. The summary "
+                "should NOT cover each file. The SUMMARY MUST explain the most "
+                "important parameters.",
+                prompt=role_content,
+                stream=False,
+                options={"num_ctx": num_ctx},
+            )
             if is_good_summary(response.response):
-                add_to_db(dbClient, role_path.name, summary=response.response, quality=quality)
+                add_to_db(
+                    dbClient, role_path.name, summary=response.response, quality=quality
+                )
                 break
         else:
             print("Max retry")

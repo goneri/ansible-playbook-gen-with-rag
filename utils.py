@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
+
+
 def read_role(role_path: Path) -> str:
     role_content = "This is a list of the different files of the role."
     for entry in role_path.glob("**/*"):
